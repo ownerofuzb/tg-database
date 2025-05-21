@@ -33,14 +33,14 @@ bot = Bot(token=BOT_TOKEN)
 CORS(app, resources={r"/*": {"origins": "https://249-school.uz"}})
 
 # Allow only specific website to access this service
-ALLOWED_ORIGINS = ["249-school.uz"]
-CORS(app, origins=ALLOWED_ORIGINS)
+# ALLOWED_ORIGINS = ["249-school.uz"]
+# CORS(app, origins=ALLOWED_ORIGINS)
 
-@app.before_request   
-def limit_origin():
-    origin = request.headers.get("Origin")
-    if origin not in ALLOWED_ORIGINS:
-        return jsonify({"error": "Origin not allowed"}), 403
+# @app.before_request   
+# def limit_origin():
+#     origin = request.headers.get("Origin")
+#     if origin not in ALLOWED_ORIGINS:
+#         return jsonify({"error": "Origin not allowed"}), 403
 
 @app.route("/")
 def home():
