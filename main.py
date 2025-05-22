@@ -22,7 +22,7 @@ ID = os.getenv("ID")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")
 DEBUG_USER_ID = os.getenv("DEBUG_USER_ID")
-ADMIN = os.getenv("ADMIN")
+ADMIN = int(os.getenv("ADMIN"))
 
 
 
