@@ -3,8 +3,10 @@ import os
 import io
 import threading
 from uuid import uuid4
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file, abort
 from flask_cors import CORS
+import requests
+from io import BytesIO
 
 from telegram import (
     Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, ParseMode, Bot, InputFile
@@ -16,21 +18,23 @@ from telegram.error import TelegramError
 
 import datetime
 
-# --- Constants ---
 ID = os.getenv("ID")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")
 DEBUG_USER_ID = os.getenv("DEBUG_USER_ID")
+ADMIN = os.getenv("ADMIN")
+
 
 
 ASK_POST, ASK_TITLE, ASK_DESCRIPTION, ASK_PHOTO = range(4)
 GET_JSON, = range(1)
 
+
 # --- Flask App ---
 app = Flask(__name__)
 bot = Bot(token=BOT_TOKEN)
-
 CORS(app, resources={r"/*": {"origins": "https://249-school.uz"}})
+
 
 # Allow only specific website to access this service
 # ALLOWED_ORIGINS = ["249-school.uz"]
@@ -106,8 +110,40 @@ def get_all():
         file = bot.get_file(fwd_msg.document.file_id)
         file_content = file.download_as_bytearray()
         json_data = json.loads(file_content.decode("utf-8"))
-
         return jsonify(json_data)
+
+    except TelegramError as e:
+        return jsonify({"error": e.message}), 400
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return jsonify({"error": "Failed to parse the .json file"}), 400
+
+@app.route("/get/img/<string:id>")
+def get_img(id):
+    try:
+ 
+        # file = bot.get_file(path)
+        # file_content = file.download_as_bytearray()
+        # data = file_content
+        file = bot.get_file(id)
+        print(f"img:{file.file_path}")
+        response = requests.get(file.file_path, stream=True)
+        response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+
+        # Get the content type from the response headers
+        content_type = response.headers.get('Content-Type')
+
+        # Create a BytesIO object from the image content
+        image_bytes = BytesIO(response.content)
+
+        return send_file(image_bytes, mimetype=content_type, as_attachment=True, download_name= f"{id}.jpg")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching image: {e}")
+        abort(404, description="Image not found or unable to fetch from the provided URL.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        abort(500, description="An internal server error occurred.")
+
 
     except TelegramError as e:
         return jsonify({"error": e.message}), 400
@@ -151,11 +187,12 @@ def update_json_file(data):
 
 # --- Telegram Bot Handlers ---
 def start(update: Update, context: CallbackContext):
-    keyboard = [[KeyboardButton("Да"), KeyboardButton("Нет")]]
-    update.message.reply_text("Хотите опубликовать событие?",
+   if ADMIN == 0 or update.message.chat_id == ADMIN:
+        keyboard = [[KeyboardButton("Да"), KeyboardButton("Нет")]]
+        update.message.reply_text("Хотите опубликовать событие?",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True)
-    )
-    return ASK_POST
+        )
+        return ASK_POST
 
 def ask_post(update: Update, context: CallbackContext):
     if update.message.text.lower() == "да":
@@ -180,7 +217,7 @@ def ask_photo(update: Update, context: CallbackContext):
         return ASK_PHOTO
 
     photo_file = update.message.photo[-1].get_file()
-    file_id = str(uuid4())
+    file_id = str(update.message.message_id)
     photo_path = f"photo_{file_id}.jpg"
     photo_file.download(photo_path)
 
@@ -192,11 +229,10 @@ def ask_photo(update: Update, context: CallbackContext):
     )
 
     events = load_json_data()
-    file = bot.get_file(sent.photo[-1].file_id)
     new_event = {
         "t": context.user_data["title"],
         "d": context.user_data["description"],
-        "i": file.file_path,
+        "i": sent.photo[-1].file_id,
         "w": datetime.datetime.now().strftime('%Y-%m-%d')
     }
     events.append(new_event)
@@ -208,14 +244,17 @@ def ask_photo(update: Update, context: CallbackContext):
     return ConversationHandler.END
 
 def cancel(update: Update, context: CallbackContext):
-    update.message.reply_text("Создание мероприятия отменено.", reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
+   if ADMIN == 0 or update.message.chat_id == ADMIN:
+        update.message.reply_text("Создание мероприятия отменено.", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
 
 
 # --- Start Telegram Bot in Thread ---
 def help(update: Update, context: CallbackContext):
-    update.message.reply_text("Чтобы опубликовать новое событие: /start\nЧтобы редактировать события: /edit")
+   if ADMIN == 0 or update.message.chat_id == ADMIN:
+        update.message.reply_text("Чтобы опубликовать новое событие: /start\nЧтобы редактировать события: /edit")
 def edit(update: Update, context: CallbackContext):
+   if ADMIN == 0 or update.message.chat_id == ADMIN:
         update.message.reply_text(f"{load_json_data()}")
         return GET_JSON
 def get_json(update: Update, context: CallbackContext):
