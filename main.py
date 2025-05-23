@@ -33,7 +33,7 @@ GET_JSON, = range(1)
 # --- Flask App ---
 app = Flask(__name__)
 bot = Bot(token=BOT_TOKEN)
-CORS(app, resources={r"/*": {"origins": "https://249-school.uz"}})
+CORS(app, resources={r"/*": {"origins":["https://249-school.uz", "http://249-school.uz"]}})
 
 
 # Allow only specific website to access this service
