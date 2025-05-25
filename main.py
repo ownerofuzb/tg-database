@@ -7,12 +7,12 @@ from flask import Flask, request, jsonify, send_file, abort
 from flask_cors import CORS
 import requests
 from io import BytesIO
-
+import ast
 from telegram import (
-    Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, ParseMode, Bot, InputFile
+    Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, ParseMode, Bot, InputFile, InlineKeyboardButton, InlineKeyboardMarkup, 
 )
 from telegram.ext import (
-    Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackContext
+    Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackContext, CallbackQueryHandler
 )
 from telegram.error import TelegramError
 
@@ -24,16 +24,13 @@ GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")
 DEBUG_USER_ID = os.getenv("DEBUG_USER_ID")
 ADMIN = int(os.getenv("ADMIN"))
 
-
-
 ASK_POST, ASK_TITLE, ASK_DESCRIPTION, ASK_PHOTO = range(4)
-GET_JSON, = range(1)
 
 
 # --- Flask App ---
 app = Flask(__name__)
 bot = Bot(token=BOT_TOKEN)
-CORS(app, resources={r"/*": {"origins":["https://249-school.uz", "http://249-school.uz"]}})
+CORS(app, resources={r"/*": {"origins": "https://249-school.uz"}})
 
 
 # Allow only specific website to access this service
@@ -187,7 +184,7 @@ def update_json_file(data):
 
 # --- Telegram Bot Handlers ---
 def start(update: Update, context: CallbackContext):
-   if ADMIN == 0 or update.message.chat_id == ADMIN:
+   if "0" in ADMIN or str(update.message.chat_id) in ADMIN:
         keyboard = [[KeyboardButton("Да"), KeyboardButton("Нет")]]
         update.message.reply_text("Хотите опубликовать событие?",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True)
@@ -244,26 +241,68 @@ def ask_photo(update: Update, context: CallbackContext):
     return ConversationHandler.END
 
 def cancel(update: Update, context: CallbackContext):
-   if ADMIN == 0 or update.message.chat_id == ADMIN:
+   if "0" in ADMIN or str(update.message.chat_id) in ADMIN:
         update.message.reply_text("Создание мероприятия отменено.", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
 
 # --- Start Telegram Bot in Thread ---
 def help(update: Update, context: CallbackContext):
-   if ADMIN == 0 or update.message.chat_id == ADMIN:
+   if "0" in ADMIN or str(update.message.chat_id) in ADMIN:
         update.message.reply_text("Чтобы опубликовать новое событие: /start\nЧтобы редактировать события: /edit")
-def edit(update: Update, context: CallbackContext):
-   if ADMIN == 0 or update.message.chat_id == ADMIN:
-        update.message.reply_text(f"{load_json_data()}")
-        return GET_JSON
-def get_json(update: Update, context: CallbackContext):
-    print(f"new value: {update.message.text}")
-    new_json = context.bot.send_document(chat_id = GROUP_CHAT_ID, document= update_json_file(json.loads(update.message.text)))
-    context.bot.edit_message_text(chat_id= GROUP_CHAT_ID, message_id = ID, text = new_json.message_id)
-    update.message.reply_text("Успешно обновлено!")
+
+def get_json(data: str):
+    print(data)
+    new_json = bot.send_document(chat_id = GROUP_CHAT_ID, document= update_json_file(data))
+    bot.edit_message_text(chat_id= GROUP_CHAT_ID, message_id = ID, text = new_json.message_id)
     return ConversationHandler.END
+
+def edit(update: Update, context: CallbackContext):
+   if "0" in ADMIN or str(update.message.chat_id) in ADMIN:
+        data =load_json_data()
+        if not data:
+            update.message.reply_text("Удалять нечего, пусто.")
+            return
+
+        keyboard = [
+            [InlineKeyboardButton("🗑️ Удалить все события", callback_data='confirm')],
+            [InlineKeyboardButton("❌ Удалить последнее событие", callback_data='delete_last')],
+            [InlineKeyboardButton("❎ Отмена", callback_data='cancel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        update.message.reply_text("Что вы хотите удалить?", reply_markup=reply_markup)
+
+# Handle button clicks
+def button(update: Update, context: CallbackContext):
+    data =load_json_data()
+    query = update.callback_query
+    query.answer()
     
+    if query.data == "confirm":
+        confirm_keyboard = [
+            [InlineKeyboardButton("✅ Да, удалить все", callback_data='delete_all')],
+            [InlineKeyboardButton("❎ Отмена", callback_data='cancel')]
+        ]
+        query.edit_message_text(
+            text="⚠️ Вы уверены, что хотите удалить все события?",
+            reply_markup=InlineKeyboardMarkup(confirm_keyboard)
+        )
+    
+    elif query.data == "delete_all":
+        data.clear()
+        deleted_value = data.pop()
+        get_json(update=update, context=context, data=f"{data}")
+        query.edit_message_text(text="Все события удалены.")
+    elif query.data == "delete_last":
+        if data:
+            deleted_value = data.pop()
+            get_json(data=data)
+            query.edit_message_text(text=f"Последнее удаленное событие: {deleted_value["t"]}")
+        else:
+            query.edit_message_text(text="Удалять нечего. Нет событий.")
+    elif query.data == "cancel":
+        query.edit_message_text(text="❎ Операция удаления отменена.")
+
 def run_telegram_bot():
     updater = Updater(token=BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
@@ -278,19 +317,12 @@ def run_telegram_bot():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
-    edit_handler = ConversationHandler(
-        entry_points=[CommandHandler("edit", edit)],
-        states={
-            GET_JSON: [MessageHandler(Filters.text & ~Filters.command, get_json)],
-
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
+ 
     dp.add_handler(CommandHandler("help", help))
 
     dp.add_handler(conv_handler)
-    dp.add_handler(edit_handler)
-
+    dp.add_handler(CommandHandler("edit", edit))
+    dp.add_handler(CallbackQueryHandler(button))
     updater.start_polling()
     updater.idle()
 
