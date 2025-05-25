@@ -290,8 +290,7 @@ def button(update: Update, context: CallbackContext):
     
     elif query.data == "delete_all":
         data.clear()
-        deleted_value = data.pop()
-        get_json(update=update, context=context, data=f"{data}")
+        get_json( data=data)
         query.edit_message_text(text="Все события удалены.")
     elif query.data == "delete_last":
         if data:
