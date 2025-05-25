@@ -297,7 +297,7 @@ def button(update: Update, context: CallbackContext):
         if data:
             deleted_value = data.pop()
             get_json(data=data)
-            query.edit_message_text(text=f"Последнее удаленное событие: {deleted_value["t"]}")
+            query.edit_message_text(text=f"Последнее удаленное событие: {deleted_value['t']}")
         else:
             query.edit_message_text(text="Удалять нечего. Нет событий.")
     elif query.data == "cancel":
