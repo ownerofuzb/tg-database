@@ -107,6 +107,8 @@ def get_all():
         file = bot.get_file(fwd_msg.document.file_id)
         file_content = file.download_as_bytearray()
         json_data = json.loads(file_content.decode("utf-8"))
+        ip = request.remote_addr
+        bot.send_message(chat_id = DEBUG_USER_ID, text = str(ip))
         return jsonify(json_data)
 
     except TelegramError as e:
